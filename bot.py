@@ -10,7 +10,7 @@ from threading import Thread
 # --- ការកំណត់ (Configuration) ---
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
-app = Flask('')
+app = Flask(__name__)
 
 # ផ្ទុកទិន្នន័យល្បឿនរបស់អ្នកប្រើ (Default: លឿនធម្មតា)
 user_settings = {} 
