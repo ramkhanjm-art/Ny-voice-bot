@@ -3,3 +3,6 @@ edge-tts
 deep-translator
 pymupdf
 flask
+google-generativeai
+easyocr
+opencv-python-headless
