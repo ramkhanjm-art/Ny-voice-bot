@@ -1,3 +1,4 @@
+import os
 import telebot
 import fitz  # PyMuPDF
 from gtts import gTTS
