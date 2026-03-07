@@ -8,7 +8,7 @@ from flask import Flask
 from threading import Thread
 
 # --- ការកំណត់ (Configuration) ---
-API_TOKEN = '8680473111:8769695108:AAH6YelB_HmA_WugnIzx9UUv6-y8hrT1o2U'
+API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask('')
 
