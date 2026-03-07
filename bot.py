@@ -8,15 +8,15 @@ from telebot import types
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
-# រក្សាទុកជម្រើសសំឡេង (Default: ស្រី)
 user_settings = {}
 
 # មុខងារបង្កើតប៊ូតុងជាប់ខាងក្រោម (Main Menu)
 def main_menu_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    btn1 = types.KeyboardButton("👩 សំឡេងស្រី (Sreymom)")
-    btn2 = types.KeyboardButton("👨 សំឡេងប្រុស (Piseth)")
-    markup.add(btn1, btn2)
+    row1 = [types.KeyboardButton("👩 សំឡេងស្រី (Sreymom)"), types.KeyboardButton("👨 សំឡេងប្រុស (Piseth)")]
+    row2 = [types.KeyboardButton("ℹ️ អំពីយើង"), types.KeyboardButton("❓ ជំនួយ")]
+    markup.add(*row1)
+    markup.add(*row2)
     return markup
 
 async def generate_voice(text, voice_name, output_file):
@@ -27,41 +27,45 @@ async def generate_voice(text, voice_name, output_file):
 def send_welcome(message):
     bot.send_message(
         message.chat.id, 
-        "🇰🇭 សួស្តី! ខ្ញុំជា Bot បំប្លែងអត្ថបទទៅជាសំឡេងពិរោះ។\n\nសូមជ្រើសរើសប្រភេទសំឡេងតាមប៊ូតុងខាងក្រោម រួចផ្ញើអត្ថបទមកខ្ញុំ៖", 
+        "🇰🇭 សួស្តី! ខ្ញុំជា Bot បំប្លែងអត្ថបទទៅជាសំឡេងពិរោះបំផុត។\n\nសូមប្រើប៊ូតុងខាងក្រោមដើម្បីកំណត់សំឡេង រួចផ្ញើអត្ថបទមកខ្ញុំ៖", 
         reply_markup=main_menu_keyboard()
     )
 
-# ផ្នែកចាប់យកការចុចប៊ូតុងប្តូរសំឡេង
-@bot.message_handler(func=lambda message: message.text in ["👩 សំឡេងស្រី (Sreymom)", "👨 សំឡេងប្រុស (Piseth)"])
-def handle_voice_change(message):
-    if "ស្រី" in message.text:
-        user_settings[message.chat.id] = "km-KH-SreymomNeural"
-        bot.reply_to(message, "✅ បានប្តូរទៅជា **សំឡេងស្រី** រួចរាល់!", parse_mode="Markdown")
-    else:
-        user_settings[message.chat.id] = "km-KH-PisethNeural"
-        bot.reply_to(message, "✅ បានប្តូរទៅជា **សំឡេងប្រុស** រួចរាល់!", parse_mode="Markdown")
-
-# ផ្នែកបំប្លែងអត្ថបទជាសំឡេង
+# ផ្នែកចាប់យកការចុចប៊ូតុងប្តូរសំឡេង និងព័ត៌មាន
 @bot.message_handler(func=lambda message: True)
-def handle_text(message):
+def handle_all_messages(message):
     chat_id = message.chat.id
-    # ប្រសិនបើមិនទាន់រើស យកស្រីជា Default
-    selected_voice = user_settings.get(chat_id, "km-KH-SreymomNeural")
-    output_file = f"voice_{chat_id}.mp3"
+    text = message.text
+
+    if text == "👩 សំឡេងស្រី (Sreymom)":
+        user_settings[chat_id] = "km-KH-SreymomNeural"
+        bot.reply_to(message, "✅ បានប្តូរទៅជា **សំឡេងស្រី** (Sreymom)!")
     
-    # បង្ហាញ Action ថា Bot កំពុងថតសំឡេង (ត្រង់ក្បាល Bot)
-    bot.send_chat_action(chat_id, 'record_audio')
+    elif text == "👨 សំឡេងប្រុស (Piseth)":
+        user_settings[chat_id] = "km-KH-PisethNeural"
+        bot.reply_to(message, "✅ បានប្តូរទៅជា **សំឡេងប្រុស** (Piseth)!")
     
-    try:
-        asyncio.run(generate_voice(message.text, selected_voice, output_file))
+    elif text == "ℹ️ អំពីយើង":
+        bot.send_message(chat_id, "🤖 **Ny-Voice-Bot**\nបង្កើតឡើងដើម្បីជួយបំប្លែងអត្ថបទខ្មែរទៅជាសំឡេង AI ពិរោះៗ។\nសម្រួលដោយ៖ Gemini AI")
         
-        with open(output_file, 'rb') as audio:
-            bot.send_voice(chat_id, audio, reply_to_message_id=message.message_id)
-            
-        os.remove(output_file)
-    except Exception as e:
-        bot.reply_to(message, f"❌ មានបញ្ហា៖ {e}")
+    elif text == "❓ ជំនួយ":
+        bot.send_message(chat_id, "របៀបប្រើ៖\n1. រើសសំឡេងប្រុស ឬស្រី\n2. ផ្ញើអត្ថបទជាភាសាខ្មែរ\n3. រង់ចាំទទួលសារសំឡេង!")
+
+    else:
+        # បើជាអត្ថបទធម្មតា គឺបំប្លែងជាសំឡេង
+        selected_voice = user_settings.get(chat_id, "km-KH-SreymomNeural")
+        output_file = f"voice_{chat_id}.mp3"
+        bot.send_chat_action(chat_id, 'record_audio')
+        
+        try:
+            asyncio.run(generate_voice(text, selected_voice, output_file))
+            with open(output_file, 'rb') as audio:
+                bot.send_voice(chat_id, audio, reply_to_message_id=message.message_id)
+            os.remove(output_file)
+        except Exception as e:
+            bot.reply_to(message, f"❌ បញ្ហា៖ {e}")
 
 if __name__ == "__main__":
-    print("Bot ជាមួយប៊ូតុងបញ្ជា កំពុងដំណើរការ...")
+    bot.remove_webhook() # លុប Webhook ចាស់ដើម្បីកាត់បន្ថយ Error 409
+    print("Bot is ready!")
     bot.infinity_polling()
