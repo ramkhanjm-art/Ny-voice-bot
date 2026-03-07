@@ -4,7 +4,7 @@ import asyncio
 import edge_tts
 import sqlite3
 from telebot import types
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 # --- ការកំណត់ ---
 API_TOKEN = os.getenv('BOT_TOKEN')
@@ -100,10 +100,10 @@ def process_text_to_voice(message, input_text):
     
     final_text = input_text
     if settings.get('translate'):
-        bot.send_chat_action(chat_id, 'typing')
-        final_text = translator.translate(input_text, dest='km').text
-        bot.reply_to(message, f"📝 បកប្រែបានថា៖ {final_text}")
-
+    bot.send_chat_action(chat_id, 'typing')
+    # ប្រើ deep-translator ដើម្បីបកប្រែ
+    final_text = GoogleTranslator(source='en', target='km').translate(input_text)
+    bot.reply_to(message, f"📝 បកប្រែបានថា៖ {final_text}")
     output_file = f"v_{chat_id}.mp3"
     bot.send_chat_action(chat_id, 'record_audio')
     try:
