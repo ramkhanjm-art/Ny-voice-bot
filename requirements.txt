@@ -1,6 +1,2 @@
 pyTelegramBotAPI
-gTTS
-pymupdf
-flask
-gunicorn
 edge-tts
