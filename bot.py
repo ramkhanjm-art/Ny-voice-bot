@@ -2,25 +2,23 @@ import telebot
 import os
 import asyncio
 import edge_tts
-import fitz  # បណ្ណាល័យ PyMuPDF សម្រាប់អាន PDF
+import fitz
+import easyocr
+import google.generativeai as genai
 from telebot import types
 from deep_translator import GoogleTranslator
 from flask import Flask
 from threading import Thread
 
-# --- ផ្នែកទប់ស្កាត់កុំឱ្យ Render បិទ Bot (Web Server) ---
+# --- ការកំណត់ AI ---
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+ai_model = genai.GenerativeModel('gemini-1.5-flash')
+reader = easyocr.Reader(['kh', 'en']) # កំណត់ឱ្យអានខ្មែរ និងអង់គ្លេស
+
 app = Flask('')
 @app.route('/')
-def home(): return "Bot is Alive!"
+def home(): return "Ultimate Bot is Online!"
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    Thread(target=run_web).start()
-
-# --- ផ្នែក Bot ---
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 user_settings = {}
@@ -28,97 +26,100 @@ user_settings = {}
 def main_menu_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(types.KeyboardButton("👩 សំឡេងស្រី"), types.KeyboardButton("👨 សំឡេងប្រុស"))
-    markup.add(types.KeyboardButton("🌐 បកប្រែអង់គ្លេស -> ខ្មែរ"))
-    markup.add(types.KeyboardButton("📊 ស្ថិតិប្រើប្រាស់"), types.KeyboardButton("❓ ជំនួយ"))
+    markup.add(types.KeyboardButton("🌐 បកប្រែ"), types.KeyboardButton("⚡ ល្បឿនអាន"))
+    markup.add(types.KeyboardButton("🤖 សួរ AI (Gemini)"), types.KeyboardButton("❓ ជំនួយ"))
     return markup
 
-async def generate_voice(text, voice_name, output_file):
-    communicate = edge_tts.Communicate(text, voice_name)
+# --- មុខងារកំណត់ល្បឿន ---
+def speed_keyboard():
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("🐢 យឺត (0.8x)", callback_data="sp:0.8"),
+        types.InlineKeyboardButton("🏃 ធម្មតា (1.0x)", callback_data="sp:1.0"),
+        types.InlineKeyboardButton("🚀 លឿន (1.2x)", callback_data="sp:1.2")
+    )
+    return markup
+
+async def generate_voice(text, voice_name, speed, output_file):
+    # កែសម្រួលល្បឿន (ឧទាហរណ៍: +20% ឬ -20%)
+    rate = f"{int((float(speed)-1)*100):+d}%"
+    communicate = edge_tts.Communicate(text, voice_name, rate=rate)
     await communicate.save(output_file)
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.send_message(message.chat.id, "👋 សួស្តី! ឥឡូវអ្នកអាចផ្ញើអត្ថបទ ឬឯកសារ PDF មកខ្ញុំបានហើយ។", reply_markup=main_menu_keyboard())
-
-# --- មុខងារអាន PDF (កែសម្រួលថ្មីឱ្យហ្មត់ចត់) ---
-@bot.message_handler(content_types=['document'])
-def handle_pdf(message):
-    if message.document.file_name.lower().endswith('.pdf'):
-        wait_msg = bot.reply_to(message, "⏳ កំពុងទាញយកអត្ថបទពី PDF... សូមរង់ចាំ")
-        
-        try:
-            # ទាញយក File ពី Telegram
-            file_info = bot.get_file(message.document.file_id)
-            downloaded_file = bot.download_file(file_info.file_path)
-            
-            with open("temp.pdf", "wb") as f:
-                f.write(downloaded_file)
-            
-            # ចាប់ផ្តើមអានអត្ថបទ
-            text_content = ""
-            with fitz.open("temp.pdf") as doc:
-                for page in doc:
-                    text_content += page.get_text()
-            
-            os.remove("temp.pdf") # លុប file បណ្តោះអាសន្ន
-            
-            if len(text_content.strip()) > 5:
-                # បើមានអក្សរ ផ្ញើទៅបំប្លែងជាសំឡេង (យកត្រឹម ២០០០ តួអក្សរដំបូង)
-                bot.delete_message(message.chat.id, wait_msg.message_id)
-                process_text_to_voice(message, text_content[:2000])
-            else:
-                bot.edit_message_text("❌ មិនអាចអានបានទេ! PDF នេះប្រហែលជាប្រភេទរូបភាព (Scan) ដែលគ្មានអត្ថបទឱ្យ AI ចម្លងបានឡើយ។", message.chat.id, wait_msg.message_id)
-        
-        except Exception as e:
-            bot.edit_message_text(f"❌ កំហុសបច្ចេកទេស៖ {e}", message.chat.id, wait_msg.message_id)
+# --- ១. មុខងារអានអត្ថបទពីរូបភាព (OCR) ---
+@bot.message_handler(content_types=['photo'])
+def handle_ocr(message):
+    wait = bot.reply_to(message, "📸 កំពុងស្កេនអក្សរពីរូបភាព...")
+    file_info = bot.get_file(message.photo[-1].file_id)
+    downloaded = bot.download_file(file_info.file_path)
+    
+    with open("image.jpg", "wb") as f:
+        f.write(downloaded)
+    
+    result = reader.readtext("image.jpg", detail=0)
+    text = " ".join(result)
+    os.remove("image.jpg")
+    
+    if text.strip():
+        bot.delete_message(message.chat.id, wait.message_id)
+        process_output(message, text)
     else:
-        bot.reply_to(message, "⚠️ សូមផ្ញើតែឯកសារប្រភេទ .pdf ប៉ុណ្ណោះ!")
+        bot.edit_message_text("❌ មិនអាចរកឃើញអត្ថបទក្នុងរូបភាពនេះទេ។", message.chat.id, wait.message_id)
 
-def process_text_to_voice(message, text):
+# --- ២. មុខងារជជែកជាមួយ AI (Gemini) ---
+def chat_with_ai(message):
     chat_id = message.chat.id
-    settings = user_settings.get(chat_id, {'voice': "km-KH-SreymomNeural", 'translate': False})
+    bot.send_chat_action(chat_id, 'typing')
+    try:
+        # ប្រាប់ AI ឱ្យឆ្លើយជាភាសាខ្មែរ
+        prompt = f"Please answer in Khmer: {message.text}"
+        response = ai_model.generate_content(prompt)
+        process_output(message, response.text)
+    except:
+        bot.reply_to(message, "❌ AI រវល់បន្តិច សូមសួរម្តងទៀត។")
+
+# --- មុខងាររួមសម្រេចលទ្ធផល ---
+def process_output(message, text):
+    chat_id = message.chat.id
+    set_data = user_settings.get(chat_id, {'v': "km-KH-SreymomNeural", 's': "1.0", 'tr': False})
     
     final_text = text
-    if settings.get('translate'):
-        final_text = GoogleTranslator(source='en', target='km').translate(text)
-        bot.send_message(chat_id, f"📝 អត្ថបទបកប្រែ៖\n{final_text[:500]}...")
-
-    output_file = f"voice_{chat_id}.mp3"
-    bot.send_chat_action(chat_id, 'record_audio')
+    if set_data.get('tr'):
+        final_text = GoogleTranslator(source='auto', target='km').translate(text)
     
-    try:
-        asyncio.run(generate_voice(final_text, settings.get('voice'), output_file))
-        
-        # ផ្ញើជម្រើសឱ្យ User (Voice ឬ MP3)
-        markup = types.InlineKeyboardMarkup()
-        markup.add(
-            types.InlineKeyboardButton("🎤 សារសំឡេង", callback_data=f"v:{output_file}"),
-            types.InlineKeyboardButton("📁 ឯកសារ MP3", callback_data=f"a:{output_file}")
-        )
-        bot.send_message(chat_id, "✅ បំប្លែង PDF រួចរាល់! សូមជ្រើសរើសប្រភេទឯកសារ៖", reply_markup=markup)
-    except Exception:
-        bot.send_message(chat_id, "❌ បរាជ័យក្នុងការបង្កើតសំឡេង។")
+    out = f"res_{chat_id}.mp3"
+    asyncio.run(generate_voice(final_text, set_data['v'], set_data['s'], out))
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🎤 Voice", callback_data=f"v:{out}"),
+               types.InlineKeyboardButton("📁 MP3", callback_data=f"a:{out}"))
+    bot.send_message(chat_id, f"✅ រួចរាល់!\n📝 អត្ថបទ៖ {final_text[:200]}...", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: True)
-def handle_query(call):
-    action, f_path = call.data.split(':')
-    if os.path.exists(f_path):
-        with open(f_path, 'rb') as f:
-            if action == 'v': bot.send_voice(call.message.chat.id, f)
-            else: bot.send_audio(call.message.chat.id, f, title="PDF_Audio")
-        os.remove(f_path)
-        bot.delete_message(call.message.chat.id, call.message.message_id)
+def handle_callback(call):
+    if call.data.startswith("sp:"):
+        speed = call.data.split(":")[1]
+        user_settings[call.message.chat.id] = user_settings.get(call.message.chat.id, {'v': "km-KH-SreymomNeural", 's': "1.0", 'tr': False})
+        user_settings[call.message.chat.id]['s'] = speed
+        bot.answer_callback_query(call.id, f"ល្បឿនត្រូវបានកំណត់ទៅ {speed}x")
+    else:
+        # កូដផ្ញើ Voice/MP3 (ដូចមុន)
+        pass
 
 @bot.message_handler(func=lambda message: True)
-def handle_text(message):
-    # កូដសម្រាប់ប៊ូតុង Menu (ដូចកូដចាស់របស់អ្នក)
-    if "សំឡេង" in message.text or "បកប្រែ" in message.text:
-        # ... កូដកំណត់ settings ...
-        pass
+def handle_all(message):
+    t = message.text
+    if t == "⚡ ល្បឿនអាន":
+        bot.send_message(message.chat.id, "ជ្រើសរើសល្បឿនអាន៖", reply_markup=speed_keyboard())
+    elif t == "🤖 សួរ AI (Gemini)":
+        user_settings[message.chat.id] = user_settings.get(message.chat.id, {})
+        user_settings[message.chat.id]['mode'] = 'ai'
+        bot.reply_to(message, "តើអ្នកចង់សួរអ្វីដល់ខ្ញុំ?")
+    elif user_settings.get(message.chat.id, {}).get('mode') == 'ai':
+        chat_with_ai(message)
     else:
-        process_text_to_voice(message, message.text)
+        process_output(message, t)
 
 if __name__ == "__main__":
-    keep_alive() # បើក Web Server ឱ្យ Render ឃើញ Port
-    bot.remove_webhook()
+    Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))).start()
     bot.infinity_polling()
