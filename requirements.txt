@@ -1,6 +1,5 @@
 pyTelegramBotAPI
 edge-tts
 deep-translator
-pymupdf
-flask
 google-generativeai
+flask
