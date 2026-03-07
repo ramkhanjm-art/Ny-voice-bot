@@ -2,3 +2,4 @@ pyTelegramBotAPI
 gTTS
 pymupdf
 flask
+gunicorn
