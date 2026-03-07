@@ -1,49 +1,46 @@
 import telebot
 import os
-from gtts import gTTS
+import asyncio
+import edge_tts
+from threading import Thread
 
-# ទាញយក Token ពី Environment Variable (ត្រូវប្រាកដថាអ្នកបានដាក់ក្នុង Render រួចហើយ)
+# ទាញយក Token ពី Environment Variable
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
+# មុខងារបង្កើតសំឡេងឱ្យពិរោះ (ប្រើ Microsoft Sreymom)
+async def amain(TEXT, VOICE, OUTPUT_FILE):
+    communicate = edge_tts.Communicate(TEXT, VOICE)
+    await communicate.save(OUTPUT_FILE)
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "🇰🇭 សួស្តី! Bot បានដំណើរការជោគជ័យហើយ។ ផ្ញើអត្ថបទមក!")
+    bot.reply_to(message, "🇰🇭 សួស្តី! ឥឡូវនេះខ្ញុំមានសំឡេងពិរោះជាងមុនហើយ។ ផ្ញើអត្ថបទមក!")
 
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
-    file_path = f"v_{message.chat.id}.mp3"
+    chat_id = message.chat.id
+    output_file = f"voice_{chat_id}.mp3"
+    
+    # បង្ហាញសញ្ញាថា Bot កំពុងអាន
+    waiting_msg = bot.reply_to(message, "⌛ កំពុងអាន... សូមរង់ចាំបន្តិច")
+    
     try:
-        tts = gTTS(text=message.text, lang='km')
-        tts.save(file_path)
-        with open(file_path, 'rb') as audio:
-            bot.send_voice(message.chat.id, audio)
-        os.remove(file_path)
+        # កំណត់យកសំឡេង 'km-KH-SreymomNeural' (សំឡេងស្រីពិរោះ) 
+        # ឬដូរទៅ 'km-KH-PisethNeural' (សំឡេងប្រុស)
+        asyncio.run(amain(message.text, "km-KH-SreymomNeural", output_file))
+        
+        # ផ្ញើឯកសារសំឡេងទៅកាន់អ្នកប្រើប្រាស់
+        with open(output_file, 'rb') as audio:
+            bot.send_voice(chat_id, audio)
+        
+        # លុបសាររង់ចាំ និងលុប File ចោល
+        bot.delete_message(chat_id, waiting_msg.message_id)
+        os.remove(output_file)
+        
     except Exception as e:
-        print(f"Error: {e}")
+        bot.edit_message_text(f"⚠️ កំហុស៖ {e}", chat_id, waiting_msg.message_id)
 
 if __name__ == "__main__":
-    print("Bot is running...")
+    print("Bot ជាមួយសំឡេងពិរោះ កំពុងដំណើរការ...")
     bot.infinity_polling()
-
-import edge_tts
-import asyncio
-
-# មុខងារបំប្លែងសំឡេងឱ្យពិរោះជាមួយ Microsoft Edge TTS
-async def generate_voice(text, file_path):
-    # 'km-KH-PisethNeural' សម្រាប់សំឡេងប្រុស ឬ 'km-KH-SreymomNeural' សម្រាប់សំឡេងស្រី
-    communicate = edge_tts.Communicate(text, "km-KH-SreymomNeural")
-    await communicate.save(file_path)
-
-@bot.message_handler(func=lambda message: True)
-def handle_text(message):
-    file_path = f"v_{message.chat.id}.mp3"
-    try:
-        # រង់ចាំឱ្យវាបង្កើតសំឡេងឱ្យចប់
-        asyncio.run(generate_voice(message.text, file_path))
-        
-        with open(file_path, 'rb') as audio:
-            bot.send_voice(message.chat.id, audio)
-        os.remove(file_path)
-    except Exception as e:
-        print(f"Error: {e}")
