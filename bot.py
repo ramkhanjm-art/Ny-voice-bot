@@ -8,107 +8,74 @@ from deep_translator import GoogleTranslator
 from flask import Flask
 from threading import Thread
 
-# --- ១. កំណត់ Web Server សម្រាប់ Render ---
+# --- Flask Server សម្រាប់ Render ---
 app = Flask('')
 @app.route('/')
-def home(): return "Super Bot is Online!"
+def home(): return "Bot is Online!"
 
 def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-# --- ២. ការកំណត់ Bot & AI ---
+# --- ការកំណត់ Bot ---
 API_TOKEN = os.getenv('BOT_TOKEN')
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-ai_model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-1.5-flash')
 bot = telebot.TeleBot(API_TOKEN)
 
 user_settings = {}
 
-# --- ៣. បង្កើតប៊ូតុង Menu ពេញលេញ ---
-def main_menu_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    btn1 = types.KeyboardButton("👩 សំឡេងស្រី")
-    btn2 = types.KeyboardButton("👨 សំឡេងប្រុស")
-    btn3 = types.KeyboardButton("🌐 បកប្រែ៖ បិទ") # ប៊ូតុងនេះនឹងប្តូរតាមស្ថានភាព
-    btn4 = types.KeyboardButton("🤖 សួរ AI (Gemini)")
-    btn5 = types.KeyboardButton("❓ ជំនួយ")
-    markup.add(btn1, btn2, btn3, btn4, btn5)
-    return markup
+def split_text(text, max_length=2000):
+    return [text[i:i+max_length] for i in range(0, len(text), max_length)]
 
 async def generate_voice(text, voice_name, output_file):
     communicate = edge_tts.Communicate(text, voice_name)
     await communicate.save(output_file)
 
-# --- ៤. មុខងារបញ្ចេញសំឡេង ---
-def process_output(message, text):
-    chat_id = message.chat.id
-    settings = user_settings.get(chat_id, {'voice': "km-KH-SreymomNeural", 'translate': False})
-    
-    final_text = text
-    # បើបើកមុខងារបកប្រែ
-    if settings.get('translate'):
-        bot.send_chat_action(chat_id, 'typing')
-        final_text = GoogleTranslator(source='auto', target='km').translate(text)
-        bot.send_message(chat_id, f"📝 **អត្ថបទបកប្រែ៖**\n{final_text}")
+def get_kb(chat_id):
+    st = user_settings.get(chat_id, {'v': "km-KH-SreymomNeural", 'tr': False})
+    tr_status = "🔔 បើក" if st['tr'] else "🔕 បិទ"
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.add("👩 សំឡេងស្រី", "👨 សំឡេងប្រុស", f"🌐 បកប្រែ៖ {tr_status}", "🤖 សួរ AI (Gemini)")
+    return kb
 
-    output_file = f"voice_{chat_id}.mp3"
-    bot.send_chat_action(chat_id, 'record_audio')
-    
-    try:
-        asyncio.run(generate_voice(final_text, settings['voice'], output_file))
-        with open(output_file, 'rb') as audio:
-            bot.send_voice(chat_id, audio)
-        os.remove(output_file)
-    except Exception as e:
-        bot.send_message(chat_id, f"❌ បញ្ហាសំឡេង៖ {e}")
-
-# --- ៥. គ្រប់គ្រងប៊ូតុងបញ្ជា ---
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.send_message(message.chat.id, "👋 សួស្តី! ជ្រើសរើសមុខងារខាងក្រោម៖", reply_markup=main_menu_keyboard())
+def start(m):
+    bot.send_message(m.chat.id, "👋 សូមស្វាគមន៍! ខ្ញុំអាចបកប្រែ និងអានអត្ថបទវែងៗបាន។", reply_markup=get_kb(m.chat.id))
 
-@bot.message_handler(func=lambda message: True)
-def handle_messages(message):
-    chat_id = message.chat.id
-    t = message.text
+@bot.message_handler(func=lambda m: True)
+def handle(m):
+    cid = m.chat.id
+    t = m.text
+    st = user_settings.get(cid, {'v': "km-KH-SreymomNeural", 'tr': False})
 
     if "👩 សំឡេងស្រី" in t:
-        user_settings[chat_id] = user_settings.get(chat_id, {'translate': False})
-        user_settings[chat_id]['voice'] = "km-KH-SreymomNeural"
-        bot.reply_to(message, "✅ កំណត់យក **សំឡេងស្រី**")
-
+        user_settings[cid] = {**st, 'v': "km-KH-SreymomNeural"}
+        bot.send_message(cid, "✅ ប្រើសំឡេងស្រី", reply_markup=get_kb(cid))
     elif "👨 សំឡេងប្រុស" in t:
-        user_settings[chat_id] = user_settings.get(chat_id, {'translate': False})
-        user_settings[chat_id]['voice'] = "km-KH-PisethNeural"
-        bot.reply_to(message, "✅ កំណត់យក **សំឡេងប្រុស**")
-
+        user_settings[cid] = {**st, 'v': "km-KH-PisethNeural"}
+        bot.send_message(cid, "✅ ប្រើសំឡេងប្រុស", reply_markup=get_kb(cid))
     elif "🌐 បកប្រែ" in t:
-        current_settings = user_settings.get(chat_id, {'voice': "km-KH-SreymomNeural", 'translate': False})
-        new_status = not current_settings['translate']
-        user_settings[chat_id] = {'voice': current_settings['voice'], 'translate': new_status}
-        
-        status_text = "🔔 បើក" if new_status else "🔕 បិទ"
-        # ប្តូរឈ្មោះប៊ូតុង
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        markup.add("👩 សំឡេងស្រី", "👨 សំឡេងប្រុស", f"🌐 បកប្រែ៖ {status_text}", "🤖 សួរ AI (Gemini)", "❓ ជំនួយ")
-        bot.send_message(chat_id, f"{status_text} មុខងារបកប្រែរួចរាល់!", reply_markup=markup)
-
+        st['tr'] = not st['tr']
+        user_settings[cid] = st
+        bot.send_message(cid, f"បកប្រែត្រូវបាន { 'បើក' if st['tr'] else 'បិទ' }", reply_markup=get_kb(cid))
     elif "🤖 សួរ AI (Gemini)" in t:
-        user_settings[chat_id] = user_settings.get(chat_id, {'voice': "km-KH-SreymomNeural", 'translate': False})
-        user_settings[chat_id]['mode'] = 'ai'
-        bot.reply_to(message, "🤖 តើអ្នកចង់សួរអ្វីដល់ Gemini?")
-
+        user_settings[cid]['mode'] = 'ai'
+        bot.send_message(cid, "🤖 សួរមក! ខ្ញុំនឹងឆ្លើយជាសម្លេង។")
     else:
-        if user_settings.get(chat_id, {}).get('mode') == 'ai':
-            bot.send_chat_action(chat_id, 'typing')
-            response = ai_model.generate_content(f"Answer in Khmer: {t}")
-            process_output(message, response.text)
-            user_settings[chat_id]['mode'] = None 
-        else:
-            process_output(message, t)
+        # ដំណើរការអត្ថបទ (រួមទាំងអត្ថបទវែង)
+        if user_settings.get(cid, {}).get('mode') == 'ai':
+            t = model.generate_content(f"Answer in Khmer: {t}").text
+            user_settings[cid]['mode'] = None
+            
+        chunks = split_text(t)
+        for i, chunk in enumerate(chunks):
+            final = GoogleTranslator(source='auto', target='km').translate(chunk) if st['tr'] else chunk
+            fname = f"v_{cid}_{i}.mp3"
+            asyncio.run(generate_voice(final, st['v'], fname))
+            with open(fname, 'rb') as v:
+                bot.send_voice(cid, v, caption=f"ផ្នែកទី {i+1}" if len(chunks)>1 else None)
+            os.remove(fname)
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
-    bot.remove_webhook()
-    bot.infinity_polling()
+    bot.infinity_polling(skip_pending=True) # បន្ថែម skip_pending ដើម្បីដោះស្រាយបញ្ហា Conflict
