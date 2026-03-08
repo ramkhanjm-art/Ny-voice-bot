@@ -96,14 +96,20 @@ def handle_all(m):
     elif "🌐 បកប្រែ" in t:
         st['tr'] = not st['tr']
         bot.send_message(cid, f"បកប្រែ៖ {'បើក' if st['tr'] else 'បិទ'}", reply_markup=get_kb(cid))
-    elif "🤖 សួរ AI" in t:
-        st['mode'] = 'ai'
-        bot.send_message(cid, "🤖 សួរមក! ខ្ញុំនឹងឆ្លើយជាសំឡេង។")
-    else:
-        if st.get('mode') == 'ai':
-            t = model.generate_content(f"Answer in Khmer: {t}").text
-            st['mode'] = None
-        process_voice(m, t)
+    # ក្នុង handle_all function
+elif "🤖 សួរ AI" in t:
+    st['mode'] = 'ai' # បើក Mode AI
+    bot.send_message(cid, "🤖 សួរមក! ខ្ញុំនឹងឆ្លើយជាសំឡេង។")
+else:
+    if st.get('mode') == 'ai':
+        # ហៅ Gemini AI មកឆ្លើយ
+        t = model.generate_content(f"Answer in Khmer: {t}").text
+        st['mode'] = None
+    
+    # ប្រសិនបើបើកប៊ូតុងបកប្រែ វានឹងបកប្រែជាខ្មែរមុននឹងអាន
+    final_text = GoogleTranslator(source='auto', target='km').translate(t) if st['tr'] else t
+    process_voice(m, final_text)
+
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
