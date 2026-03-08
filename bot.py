@@ -8,7 +8,7 @@ from deep_translator import GoogleTranslator
 from flask import Flask
 from threading import Thread
 
-# --- Web Server សម្រាប់ Render ---
+# --- Web Server សម្រាប់ Render (Keep Alive) ---
 app = Flask('')
 @app.route('/')
 def home(): return "Multi-Language Bot is Online!"
@@ -22,12 +22,12 @@ bot = telebot.TeleBot(API_TOKEN)
 
 user_settings = {}
 
-# មុខងារបង្កើតសំឡេងឱ្យផ្អែមពិរោះ (Rate -10%)
+# មុខងារបង្កើតសំឡេងឱ្យផ្អែមពិរោះ (Rate -10% ឱ្យអានយឺតស្រទន់)
 async def generate_voice(text, voice_name, output_file):
     communicate = edge_tts.Communicate(text, voice_name, rate="-10%", pitch="-5Hz")
     await communicate.save(output_file)
 
-# ប៊ូតុងបញ្ជាសម្រាប់ជ្រើសរើសភាសា
+# ប៊ូតុងបញ្ជា
 def get_kb(chat_id):
     st = user_settings.get(chat_id, {'v': "km-KH-SreymomNeural", 'tr': False})
     tr_status = "🔔 បើក" if st['tr'] else "🔕 បិទ"
@@ -40,14 +40,35 @@ def get_kb(chat_id):
 @bot.message_handler(commands=['start'])
 def start(m):
     user_settings[m.chat.id] = {'v': "km-KH-SreymomNeural", 'tr': False}
-    welcome = "👋 សួស្តី! ខ្ញុំអាចបកប្រែភាសាទាំង ១១ មកជាខ្មែរ និងអានឱ្យស្តាប់បាន។"
-    bot.send_message(m.chat.id, welcome, reply_markup=get_kb(m.chat.id))
+    bot.send_message(m.chat.id, "👋 សួស្តី! ខ្ញុំអាចបកប្រែភាសាទាំង ១១ មកជាខ្មែរ និងអានឱ្យស្តាប់បាន។", reply_markup=get_kb(m.chat.id))
 
+# --- មុខងារអានឯកសារ PDF ---
+@bot.message_handler(content_types=['document'])
+def handle_pdf(message):
+    if message.document.mime_type == 'application/pdf':
+        wait = bot.reply_to(message, "📄 កំពុងអាន PDF... សូមរង់ចាំ")
+        try:
+            file_info = bot.get_file(message.document.file_id)
+            downloaded = bot.download_file(file_info.file_path)
+            with open("temp.pdf", "wb") as f: f.write(downloaded)
+            text = ""
+            with fitz.open("temp.pdf") as doc:
+                for page in doc: text += page.get_text()
+            os.remove("temp.pdf")
+            if text.strip():
+                bot.delete_message(message.chat.id, wait.message_id)
+                process_output(message, text)
+            else:
+                bot.edit_message_text("❌ មិនអាចអានអត្ថបទពី PDF បានទេ។", message.chat.id, wait.message_id)
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ កំហុស PDF: {e}")
+
+# --- មុខងារបកប្រែស្វ័យប្រវត្តិ និងបង្កើតសំឡេង ---
 def process_output(message, text):
     cid = message.chat.id
     st = user_settings.get(cid, {'v': "km-KH-SreymomNeural", 'tr': False})
     
-    # មុខងារបកប្រែស្វ័យប្រវត្តិ (Auto Detect)
+    # បកប្រែពីគ្រប់ភាសាមកខ្មែរ
     try:
         final_text = GoogleTranslator(source='auto', target='km').translate(text) if st['tr'] else text
     except:
@@ -57,7 +78,7 @@ def process_output(message, text):
     bot.send_chat_action(cid, 'record_audio')
     try:
         asyncio.run(generate_voice(final_text, st['v'], fname))
-        # ភ្ជាប់ Username និងបញ្ជីភាសា
+        # ភ្ជាប់ Username និងបញ្ជីភាសាដែលគាំទ្រ
         caption_text = "✨ អានដោយ៖ @Ny_voice_bot\n🌍 គាំទ្រ៖ 🇺🇸 🇫🇷 🇨🇳 🇻🇳 🇰🇷 🇯🇵 🇮🇳 🇱🇦 🇲🇾 🇵🇭 🇮🇩"
         with open(fname, 'rb') as v: 
             bot.send_voice(cid, v, caption=caption_text)
@@ -84,9 +105,8 @@ def handle_all(m):
     elif t == "🏳️ ភាសាដែលគាំទ្រ":
         langs = (
             "🏳️ **បញ្ជីភាសាដែលគាំទ្រ (Auto Detect):**\n"
-            "🇺🇸 អង់គ្លេស, 🇫🇷 បារាំង, 🇨🇳 ចិន, 🇻🇳 វៀតណាម, "
-            "🇰🇷 កូរ៉េ, 🇯🇵 ជប៉ុន, 🇮🇳 ឥណ្ឌា, 🇱🇦 ឡាវ, "
-            "🇲🇾 ម៉ាឡេស៊ី, 🇵🇭 ហ្វីលីពីន, 🇮🇩 ឥណ្ឌូនេស៊ី"
+            "អង់គ្លេស, បារាំង, ចិន, វៀតណាម, កូរ៉េ, ជប៉ុន, "
+            "ឥណ្ឌា, ឡាវ, ម៉ាឡេស៊ី, ហ្វីលីពីន, ឥណ្ឌូនេស៊ី"
         )
         bot.send_message(cid, langs, parse_mode="Markdown")
     else:
@@ -94,5 +114,5 @@ def handle_all(m):
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
-    # ប្រើ skip_pending=True ដើម្បីកម្ចាត់ Conflict 409
+    # សំខាន់៖ ប្រើ skip_pending=True ដើម្បីជួយកាត់បន្ថយ Conflict
     bot.infinity_polling(skip_pending=True)
