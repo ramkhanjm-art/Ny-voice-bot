@@ -8,7 +8,7 @@ from deep_translator import GoogleTranslator
 from flask import Flask
 from threading import Thread
 
-# --- Web Server សម្រាប់ Render ---
+# --- Web Server ---
 app = Flask('')
 @app.route('/')
 def home(): return "Bot is Online!"
@@ -17,7 +17,7 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-# --- ការកំណត់ Bot ---
+# --- Bot Config ---
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
@@ -32,8 +32,6 @@ LANG_MAP = {
     "🇮🇳 Hindi": {"code": "hi", "f": "hi-IN-SwaraNeural", "m": "hi-IN-MadhurNeural"},
     "🇹🇭 Thai": {"code": "th", "f": "th-TH-AcharaNeural", "m": "th-TH-NiwatNeural"},
     "🇱🇦 Lao": {"code": "lo", "f": "lo-LA-KeomanyNeural", "m": "lo-LA-ChanthavongNeural"},
-    "🇮🇩 Indonesian": {"code": "id", "f": "id-ID-GadisNeural", "m": "id-ID-ArdiNeural"},
-    "🇵🇭 Filipino": {"code": "fil", "f": "fil-PH-BlessicaNeural", "m": "fil-PH-AngeloNeural"},
     "🇲🇾 Malay": {"code": "ms", "f": "ms-MY-YasminNeural", "m": "ms-MY-OsmanNeural"},
     "🇲🇲 Myanmar": {"code": "my", "f": "my-MM-NilarNeural", "m": "my-MM-ThihaNeural"}
 }
@@ -55,9 +53,8 @@ def get_kb(chat_id):
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    # កំណត់ Default ជា MP3 និងភាសាខ្មែរ
     user_data[m.chat.id] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'mp3'}
-    bot.send_message(m.chat.id, f"👋 សួស្តី {m.from_user.first_name}! ផ្ញើអត្ថបទមកដើម្បីបកប្រែជា MP3/Voice (Default: MP3)", reply_markup=get_kb(m.chat.id))
+    bot.send_message(m.chat.id, f"👋 សួស្តី {m.from_user.first_name}! ផ្ញើអត្ថបទមកដើម្បីបកប្រែ", reply_markup=get_kb(m.chat.id))
 
 @bot.message_handler(func=lambda m: m.text and "ប្តូរទៅ" in m.text)
 def settings(m):
@@ -77,26 +74,16 @@ def set_lang(m):
 
 @bot.message_handler(func=lambda m: True)
 def process(m):
-    if not m.text: return
     cid = m.chat.id
-    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'mp3'}
-    
-    st = user_data[cid]
+    st = user_data.get(cid, {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'mp3'})
     target = LANG_MAP[st['target']]
-    bot.send_chat_action(cid, 'typing')
-
     try:
         translated = GoogleTranslator(source='auto', target=target['code']).translate(m.text)
         bot.send_message(cid, f"📝 `{translated}`", parse_mode="Markdown")
-        
         fname = f"v_{cid}_{int(time.time())}.mp3"
-        bot.send_chat_action(cid, 'record_audio')
         asyncio.run(generate_voice(translated, target[st['gender']], fname))
-        
         with open(fname, 'rb') as v:
-            # ទុកតែ Userbot Link ក្នុង Caption តាមការចង់បាន
             caption_text = "📣 @nyvoicebot" 
-            
             if st.get('format') == 'voice':
                 bot.send_voice(cid, v, caption=caption_text)
             else:
@@ -107,5 +94,4 @@ def process(m):
 
 if __name__ == "__main__":
     Thread(target=run_web, daemon=True).start()
-    # ប្រើ skip_pending=True ដើម្បីដោះស្រាយបញ្ហា Conflict លើ Render
     bot.infinity_polling(skip_pending=True)
