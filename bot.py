@@ -6,20 +6,25 @@ from telebot import types
 from deep_translator import GoogleTranslator
 from flask import Flask
 from threading import Thread
+import time
 
 # --- Web Server សម្រាប់ Render ---
 app = Flask('')
+
 @app.route('/')
-def home(): return "Multi-Language Pro Bot is Live!"
+def home():
+    return "Bot is running!"
 
 def run_web():
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+    # Render ត្រូវការឱ្យយើងប្រើ Port ដែលវាផ្តល់ឱ្យតាមរយៈ Environment Variable
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 # --- ការកំណត់ Bot ---
+# ប្រើ os.getenv ដើម្បីសុវត្ថិភាព តែត្រូវប្រាកដថាបានដាក់ក្នុង Render Environment Variables
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
-# បញ្ជីសំឡេង និងកូដភាសា (១២ ភាសា)
 LANG_MAP = {
     "🇺🇸 English": {"code": "en", "f": "en-US-AvaNeural", "m": "en-US-AndrewNeural"},
     "🇫🇷 French": {"code": "fr", "f": "fr-FR-DeniseNeural", "m": "fr-FR-HenriNeural"},
@@ -56,7 +61,7 @@ def start(m):
     user_data[m.chat.id] = {'gender': 'f', 'target': '🇰🇭 Khmer'}
     bot.send_message(m.chat.id, "👋 សួស្តី! ផ្ញើអត្ថបទមក ខ្ញុំនឹងបកប្រែ ផ្ញើទាំងសំឡេង និងអត្ថបទឱ្យ Copy។", reply_markup=get_kb(m.chat.id))
 
-@bot.message_handler(func=lambda m: "ប្តូរទៅសំឡេង" in m.text)
+@bot.message_handler(func=lambda m: m.text and "ប្តូរទៅសំឡេង" in m.text)
 def toggle_gender(m):
     cid = m.chat.id
     if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer'}
@@ -73,8 +78,8 @@ def set_language(m):
 
 @bot.message_handler(func=lambda m: True)
 def handle_message(m):
+    if not m.text: return
     cid = m.chat.id
-    text = m.text
     if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer'}
     
     st = user_data[cid]
@@ -82,26 +87,36 @@ def handle_message(m):
 
     bot.send_chat_action(cid, 'typing')
     try:
-        translated_text = GoogleTranslator(source='auto', target=target_info['code']).translate(text)
+        translated_text = GoogleTranslator(source='auto', target=target_info['code']).translate(m.text)
         
-        # ផ្ញើអត្ថបទដែលអាច Copy បាន (Monospace)
-        bot.send_message(cid, f"📝 **បកប្រែរួច៖**\n\n`{translated_text}`", parse_mode="MarkdownV2")
+        # លុបតួអក្សរពិសេសខ្លះៗចេញដើម្បីការពារ Markdown Error
+        clean_text = translated_text.replace('`', '').replace('*', '')
+        bot.send_message(cid, f"📝 **បកប្រែរួច៖**\n\n`{clean_text}`", parse_mode="Markdown")
 
         # បង្កើតសំឡេង
         voice_name = target_info[st['gender']]
-        fname = f"v_{cid}.mp3"
+        fname = f"v_{cid}_{int(time.time())}.mp3" # បន្ថែម time ដើម្បីការពារឈ្មោះ file ជាន់គ្នា
         
         bot.send_chat_action(cid, 'record_audio')
         asyncio.run(generate_voice(translated_text, voice_name, fname))
         
-        # ផ្ញើសំឡេង (ដោយគ្មានប៊ូតុង Inline)
         with open(fname, 'rb') as v:
-            bot.send_voice(cid, v, caption=f"🌐 ភាសា៖ {st['target']}\n📣 @nyvoicebot")
+            bot.send_voice(cid, v, caption=f"🌐 ភាសា៖ {st['target']}\n📣 https://t.me/nyvoicebot")
         
-        os.remove(fname)
-    except:
-        bot.send_message(cid, "❌ មិនអាចដំណើរការបានទេ។")
+        if os.path.exists(fname):
+            os.remove(fname)
+    except Exception as e:
+        print(f"Error: {e}")
+        bot.send_message(cid, "❌ មិនអាចដំណើរការបានទេ។ សូមព្យាយាមម្តងទៀត។")
 
+# --- ផ្នែកសំខាន់បំផុតសម្រាប់ Render ---
 if __name__ == "__main__":
-    Thread(target=run_web).start()
-    bot.infinity_polling(skip_pending=True)
+    # បើក Web Server ជាមុន
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
+    
+    # Run Bot Polling
+    # skip_pending=True ជួយឱ្យ Bot មិនឆ្លើយតបសារចាស់ៗដែលផ្ញើមកពេល Bot កំពុងបិទ
+    print("Bot is starting...")
+    bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=20)
