@@ -16,12 +16,10 @@ def home():
     return "Bot is running!"
 
 def run_web():
-    # Render ត្រូវការឱ្យយើងប្រើ Port ដែលវាផ្តល់ឱ្យតាមរយៈ Environment Variable
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
 # --- ការកំណត់ Bot ---
-# ប្រើ os.getenv ដើម្បីសុវត្ថិភាព តែត្រូវប្រាកដថាបានដាក់ក្នុង Render Environment Variables
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
@@ -47,32 +45,48 @@ async def generate_voice(text, voice_name, output_file):
     await communicate.save(output_file)
 
 def get_kb(chat_id):
-    st = user_data.get(chat_id, {'gender': 'f', 'target': '🇰🇭 Khmer'})
-    gender_btn = "👨 ប្តូរទៅសំឡេងប្រុស" if st['gender'] == 'f' else "👩 ប្តូរទៅសំឡេងស្រី"
+    # កំណត់តម្លៃដើម៖ ស្រី, ខ្មែរ, និងប្រភេទ Voice Note
+    st = user_data.get(chat_id, {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'voice'})
     
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    kb.add(types.KeyboardButton(gender_btn))
+    gender_btn = "👨 ប្តូរទៅសំឡេងប្រុស" if st['gender'] == 'f' else "👩 ប្តូរទៅសំឡេងស្រី"
+    format_btn = "📁 ប្តូរទៅជា MP3" if st.get('format') == 'voice' else "🎤 ប្តូរទៅជា Voice"
+    
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.add(types.KeyboardButton(gender_btn), types.KeyboardButton(format_btn))
+    
     buttons = [types.KeyboardButton(lang) for lang in LANG_MAP.keys()]
     kb.add(*buttons)
     return kb
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    user_data[m.chat.id] = {'gender': 'f', 'target': '🇰🇭 Khmer'}
+    user_data[m.chat.id] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'voice'}
     bot.send_message(m.chat.id, "👋 សួស្តី! ផ្ញើអត្ថបទមក ខ្ញុំនឹងបកប្រែ ផ្ញើទាំងសំឡេង និងអត្ថបទឱ្យ Copy។", reply_markup=get_kb(m.chat.id))
 
 @bot.message_handler(func=lambda m: m.text and "ប្តូរទៅសំឡេង" in m.text)
 def toggle_gender(m):
     cid = m.chat.id
-    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer'}
+    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'voice'}
     user_data[cid]['gender'] = 'm' if user_data[cid]['gender'] == 'f' else 'f'
     status = "ប្រុស" if user_data[cid]['gender'] == 'm' else "ស្រី"
     bot.send_message(cid, f"✅ បានប្តូរទៅប្រើសំឡេង៖ {status}", reply_markup=get_kb(cid))
 
+@bot.message_handler(func=lambda m: m.text and "ប្តូរទៅជា" in m.text)
+def toggle_format(m):
+    cid = m.chat.id
+    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'voice'}
+    
+    # ប្តូរ format រវាង voice និង mp3
+    current_format = user_data[cid].get('format', 'voice')
+    user_data[cid]['format'] = 'mp3' if current_format == 'voice' else 'voice'
+    
+    new_status = "ឯកសារ MP3" if user_data[cid]['format'] == 'mp3' else "Voice Note"
+    bot.send_message(cid, f"✅ បានប្តូរទម្រង់ផ្ញើទៅជា៖ {new_status}", reply_markup=get_kb(cid))
+
 @bot.message_handler(func=lambda m: m.text in LANG_MAP.keys())
 def set_language(m):
     cid = m.chat.id
-    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer'}
+    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'voice'}
     user_data[cid]['target'] = m.text
     bot.send_message(cid, f"🎯 គោលដៅបកប្រែ៖ {m.text}", reply_markup=get_kb(cid))
 
@@ -80,7 +94,7 @@ def set_language(m):
 def handle_message(m):
     if not m.text: return
     cid = m.chat.id
-    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer'}
+    if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'voice'}
     
     st = user_data[cid]
     target_info = LANG_MAP[st['target']]
@@ -89,19 +103,25 @@ def handle_message(m):
     try:
         translated_text = GoogleTranslator(source='auto', target=target_info['code']).translate(m.text)
         
-        # លុបតួអក្សរពិសេសខ្លះៗចេញដើម្បីការពារ Markdown Error
         clean_text = translated_text.replace('`', '').replace('*', '')
         bot.send_message(cid, f"📝 **បកប្រែរួច៖**\n\n`{clean_text}`", parse_mode="Markdown")
 
-        # បង្កើតសំឡេង
         voice_name = target_info[st['gender']]
-        fname = f"v_{cid}_{int(time.time())}.mp3" # បន្ថែម time ដើម្បីការពារឈ្មោះ file ជាន់គ្នា
+        fname = f"v_{cid}_{int(time.time())}.mp3"
         
         bot.send_chat_action(cid, 'record_audio')
         asyncio.run(generate_voice(translated_text, voice_name, fname))
         
-        with open(fname, 'rb') as v:
-            bot.send_voice(cid, v, caption=f"🌐 ភាសា៖ {st['target']}\n📣 https://t.me/nyvoicebot")
+        with open(fname, 'rb') as audio_file:
+            caption_text = f"🌐 ភាសា៖ {st['target']}\n📣 https://t.me/nyvoicebot"
+            
+            # ពិនិត្យមើល Format ដែល User បានរើស
+            if st.get('format') == 'mp3':
+                # ផ្ញើជា file MP3 (Document)
+                bot.send_document(cid, audio_file, caption=caption_text, visible_file_name=f"voice_{target_info['code']}.mp3")
+            else:
+                # ផ្ញើជា Voice Note
+                bot.send_voice(cid, audio_file, caption=caption_text)
         
         if os.path.exists(fname):
             os.remove(fname)
@@ -109,14 +129,10 @@ def handle_message(m):
         print(f"Error: {e}")
         bot.send_message(cid, "❌ មិនអាចដំណើរការបានទេ។ សូមព្យាយាមម្តងទៀត។")
 
-# --- ផ្នែកសំខាន់បំផុតសម្រាប់ Render ---
 if __name__ == "__main__":
-    # បើក Web Server ជាមុន
     t = Thread(target=run_web)
     t.daemon = True
     t.start()
     
-    # Run Bot Polling
-    # skip_pending=True ជួយឱ្យ Bot មិនឆ្លើយតបសារចាស់ៗដែលផ្ញើមកពេល Bot កំពុងបិទ
     print("Bot is starting...")
     bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=20)
