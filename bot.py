@@ -11,7 +11,7 @@ from threading import Thread
 # --- Web Server សម្រាប់ Render ---
 app = Flask('')
 @app.route('/')
-def home(): return "Bot is running (MP3 & Voice)!"
+def home(): return "Bot is Live (MP3 Default - No OCR)!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -21,10 +21,12 @@ def run_web():
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
+# បញ្ជីភាសាដែលបានបន្ថែម ម៉ាឡេស៊ី និង មីយ៉ាន់ម៉ា
 LANG_MAP = {
     "🇺🇸 English": {"code": "en", "f": "en-US-AvaNeural", "m": "en-US-AndrewNeural"},
     "🇫🇷 French": {"code": "fr", "f": "fr-FR-DeniseNeural", "m": "fr-FR-HenriNeural"},
     "🇨🇳 Chinese": {"code": "zh-CN", "f": "zh-CN-XiaoxiaoNeural", "m": "zh-CN-YunxiNeural"},
+    "🇰🇭 Khmer": {"code": "km", "f": "km-KH-SreymomNeural", "m": "km-KH-PisethNeural"},
     "🇻🇳 Vietnamese": {"code": "vi", "f": "vi-VN-HoaiMyNeural", "m": "vi-VN-NamMinhNeural"},
     "🇰🇷 Korean": {"code": "ko", "f": "ko-KR-SunHiNeural", "m": "ko-KR-InGooNeural"},
     "🇯🇵 Japanese": {"code": "ja", "f": "ja-JP-NanamiNeural", "m": "ja-JP-KeitaNeural"},
@@ -33,7 +35,8 @@ LANG_MAP = {
     "🇱🇦 Lao": {"code": "lo", "f": "lo-LA-KeomanyNeural", "m": "lo-LA-ChanthavongNeural"},
     "🇮🇩 Indonesian": {"code": "id", "f": "id-ID-GadisNeural", "m": "id-ID-ArdiNeural"},
     "🇵🇭 Filipino": {"code": "fil", "f": "fil-PH-BlessicaNeural", "m": "fil-PH-AngeloNeural"},
-    "🇰🇭 Khmer": {"code": "km", "f": "km-KH-SreymomNeural", "m": "km-KH-PisethNeural"}
+    "🇲🇾 Malay": {"code": "ms", "f": "ms-MY-YasminNeural", "m": "ms-MY-OsmanNeural"},
+    "🇲🇲 Myanmar": {"code": "my", "f": "my-MM-NilarNeural", "m": "my-MM-ThihaNeural"}
 }
 
 user_data = {}
@@ -55,9 +58,9 @@ def get_kb(chat_id):
 
 @bot.message_handler(commands=['start'])
 def start(m):
+    # កំណត់ Default ជា mp3
     user_data[m.chat.id] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'mp3'}
-    msg = "👋 សួស្តី! ផ្ញើអត្ថបទមក ខ្ញុំនឹងបកប្រែជាសំឡេងឱ្យ។\n✅ កំណត់ដើម៖ **ឯកសារ MP3**"
-    bot.send_message(m.chat.id, msg, reply_markup=get_kb(m.chat.id), parse_mode="Markdown")
+    bot.send_message(m.chat.id, "👋 សួស្តី! ផ្ញើអត្ថបទមកបកប្រែជា MP3/Voice (Default: MP3)", reply_markup=get_kb(m.chat.id))
 
 @bot.message_handler(func=lambda m: m.text and "ប្តូរទៅ" in m.text)
 def toggle_settings(m):
@@ -67,7 +70,7 @@ def toggle_settings(m):
     if "សំឡេង" in m.text:
         user_data[cid]['gender'] = 'm' if user_data[cid]['gender'] == 'f' else 'f'
         status = "ប្រុស" if user_data[cid]['gender'] == 'm' else "ស្រី"
-        bot.send_message(cid, f"✅ ប្តូរទៅសំឡេង៖ {status}", reply_markup=get_kb(cid))
+        bot.send_message(cid, f"✅ ប្តូរភេទរួចរាល់៖ {status}", reply_markup=get_kb(cid))
     elif "ជា" in m.text:
         user_data[cid]['format'] = 'voice' if user_data[cid].get('format') == 'mp3' else 'mp3'
         status = "Voice Note" if user_data[cid]['format'] == 'voice' else "ឯកសារ MP3"
@@ -81,7 +84,7 @@ def set_language(m):
     bot.send_message(cid, f"🎯 គោលដៅបកប្រែ៖ {m.text}", reply_markup=get_kb(cid))
 
 @bot.message_handler(func=lambda m: True)
-def handle_message(m):
+def handle_text(m):
     if not m.text: return
     cid = m.chat.id
     if cid not in user_data: user_data[cid] = {'gender': 'f', 'target': '🇰🇭 Khmer', 'format': 'mp3'}
@@ -91,28 +94,25 @@ def handle_message(m):
     bot.send_chat_action(cid, 'typing')
 
     try:
-        translated_text = GoogleTranslator(source='auto', target=target_info['code']).translate(m.text)
-        clean_text = translated_text.replace('`', '').replace('*', '')
-        bot.send_message(cid, f"📝 **បកប្រែរួច៖**\n\n`{clean_text}`", parse_mode="Markdown")
+        translated = GoogleTranslator(source='auto', target=target_info['code']).translate(m.text)
+        bot.send_message(cid, f"📝 **បកប្រែរួច៖**\n\n`{translated}`", parse_mode="Markdown")
 
-        voice_name = target_info[st['gender']]
         fname = f"v_{cid}_{int(time.time())}.mp3"
-        
         bot.send_chat_action(cid, 'record_audio')
-        asyncio.run(generate_voice(translated_text, voice_name, fname))
+        asyncio.run(generate_voice(translated, target_info[st['gender']], fname))
         
         with open(fname, 'rb') as audio_file:
             cap = f"🌐 ភាសា៖ {st['target']}\n📣 https://t.me/nyvoicebot"
             if st.get('format') == 'voice':
                 bot.send_voice(cid, audio_file, caption=cap)
             else:
-                bot.send_document(cid, audio_file, caption=cap, visible_file_name=f"voice_{int(time.time())}.mp3")
+                bot.send_document(cid, audio_file, caption=cap, visible_file_name=f"voice.mp3")
         
         if os.path.exists(fname): os.remove(fname)
-    except Exception as e:
-        bot.send_message(cid, "❌ មានបញ្ហាបច្ចេកទេស!")
+    except:
+        bot.send_message(cid, "❌ បញ្ហាបច្ចេកទេស! សូមព្យាយាមម្តងទៀត។")
 
 if __name__ == "__main__":
     Thread(target=run_web, daemon=True).start()
-    print("Bot is Live (No OCR)!")
+    # បន្ថែម skip_pending ដើម្បីជៀសវាង Conflict
     bot.infinity_polling(skip_pending=True)
