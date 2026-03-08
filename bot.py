@@ -96,7 +96,7 @@ def handle_message(m):
         
         # ផ្ញើសំឡេង (ដោយគ្មានប៊ូតុង Inline)
         with open(fname, 'rb') as v:
-            bot.send_voice(cid, v, caption=f"🌐 ភាសា៖ {st['target']}\n✨ @Ny_voice_bot")
+            bot.send_voice(cid, v, caption=f"🌐 ភាសា៖ {st['target']}\n📣 @nyvoicebot")
         
         os.remove(fname)
     except:
