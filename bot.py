@@ -8,10 +8,10 @@ from deep_translator import GoogleTranslator
 from flask import Flask
 from threading import Thread
 
-# --- បង្កើត Web Server ដើម្បីឱ្យ Render ដំណើរការជាប់ (Keep Alive) ---
+# --- បង្កើត Web Server សម្រាប់ Render (Keep Alive) ---
 app = Flask('')
 @app.route('/')
-def home(): return "Bot is Online & Healthy!"
+def home(): return "Bot is Online!"
 
 def run_web():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
@@ -24,7 +24,6 @@ user_settings = {}
 
 # មុខងារបង្កើតសំឡេងឱ្យផ្អែមពិរោះ (Rate -10% ឱ្យអានយឺតស្រទន់)
 async def generate_voice(text, voice_name, output_file):
-    # កំណត់ rate="-10%" ឱ្យអានមួយៗ និង pitch="-5Hz" ឱ្យសម្លេងស្រទន់
     communicate = edge_tts.Communicate(text, voice_name, rate="-10%", pitch="-5Hz")
     await communicate.save(output_file)
 
@@ -33,14 +32,14 @@ def get_kb(chat_id):
     st = user_settings.get(chat_id, {'v': "km-KH-SreymomNeural", 'tr': False})
     tr_status = "🔔 បើក" if st['tr'] else "🔕 បិទ"
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add("👩 សំឡេងស្រី (ផ្អែម)", "👨 សំឡេងប្រុស (ស្រទន់)")
-    kb.add(f"🌐 បកប្រែ៖ {tr_status}")
+    kb.add(types.KeyboardButton("👩 សំឡេងស្រី (ផ្អែម)"), types.KeyboardButton("👨 សំឡេងប្រុស (ស្រទន់)"))
+    kb.add(types.KeyboardButton(f"🌐 បកប្រែ៖ {tr_status}"))
     return kb
 
 @bot.message_handler(commands=['start'])
 def start(m):
     user_settings[m.chat.id] = {'v': "km-KH-SreymomNeural", 'tr': False}
-    bot.send_message(m.chat.id, "👋 សួស្តី! ផ្ញើអត្ថបទមក ខ្ញុំនឹងបកប្រែ និងអានឱ្យអ្នកស្តាប់ដោយសំឡេងផ្អែមពិរោះ។", reply_markup=get_kb(m.chat.id))
+    bot.send_message(m.chat.id, "👋 សួស្តី! ផ្ញើអត្ថបទ ឬ PDF មក ខ្ញុំនឹងបកប្រែ និងអានឱ្យអ្នកស្តាប់។", reply_markup=get_kb(m.chat.id))
 
 # --- មុខងារអានឯកសារ PDF ---
 @bot.message_handler(content_types=['document'])
@@ -63,12 +62,11 @@ def handle_pdf(message):
         except Exception as e:
             bot.send_message(message.chat.id, f"❌ កំហុស PDF: {e}")
 
-# --- មុខងារបង្កើតសំឡេងអាន និងភ្ជាប់ Username/Ads ---
+# --- មុខងារបង្កើតសំឡេងអាន និងភ្ជាប់ Username ---
 def process_output(message, text):
     cid = message.chat.id
     st = user_settings.get(cid, {'v': "km-KH-SreymomNeural", 'tr': False})
     
-    # មុខងារបកប្រែ (បើបើក)
     try:
         final_text = GoogleTranslator(source='auto', target='km').translate(text) if st['tr'] else text
     except:
@@ -79,12 +77,11 @@ def process_output(message, text):
     try:
         asyncio.run(generate_voice(final_text, st['v'], fname))
         
-        # --- ត្រង់នេះគឺជាកន្លែងដាក់ Username Bot ឬ Link ពាណិជ្ជកម្មរបស់អ្នក ---
-        ad_text = "✨ អានដោយ៖ @Ny_voice_bot\n📢 ផ្សាយពាណិជ្ជកម្ម៖ @YourContact"
+        # កន្លែងដាក់ Username របស់អ្នក
+        caption_text = "✨ អានដោយ៖ @Ny_voice_bot\n📢 ទំនាក់ទំនង៖ @YourAdminID"
         
         with open(fname, 'rb') as v: 
-            # ប្រើ caption ដើម្បីភ្ជាប់អត្ថបទជាមួយសំឡេង
-            bot.send_voice(cid, v, caption=ad_text)
+            bot.send_voice(cid, v, caption=caption_text)
         os.remove(fname)
     except: 
         bot.send_message(cid, "❌ មិនអាចបង្កើតសំឡេងបានទេ។")
@@ -96,10 +93,10 @@ def handle_all(m):
     if cid not in user_settings: user_settings[cid] = {'v': "km-KH-SreymomNeural", 'tr': False}
     st = user_settings[cid]
 
-    if t == "👩 សំឡេងស្រី (ផ្អែម)":
+    if "👩 សំឡេងស្រី" in t:
         st['v'] = "km-KH-SreymomNeural"
         bot.send_message(cid, "✅ បានកំណត់យកសំឡេងស្រី (Sreymom)", reply_markup=get_kb(cid))
-    elif t == "👨 សំឡេងប្រុស (ស្រទន់)":
+    elif "👨 សំឡេងប្រុស" in t:
         st['v'] = "km-KH-PisethNeural"
         bot.send_message(cid, "✅ បានកំណត់យកសំឡេងប្រុស (Piseth)", reply_markup=get_kb(cid))
     elif "🌐 បកប្រែ" in t:
