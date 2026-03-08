@@ -4,3 +4,4 @@ deep-translator
 google-generativeai
 flask
 pymupdf
+gunicorn
