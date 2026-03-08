@@ -2,4 +2,6 @@ pyTelegramBotAPI
 edge-tts
 deep-translator
 flask
-pymupdf
+easyocr
+opencv-python-headless
+Pillow
