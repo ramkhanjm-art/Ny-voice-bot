@@ -7,10 +7,10 @@ from deep_translator import GoogleTranslator
 from flask import Flask
 from threading import Thread
 
-# --- Web Server សម្រាប់ Render (Keep Alive) ---
+# --- Web Server សម្រាប់ Render ---
 app = Flask('')
 @app.route('/')
-def home(): return "Multi-Language Two-Way Bot is Online!"
+def home(): return "Multi-Language Bot is Live!"
 
 def run_web():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
@@ -19,7 +19,7 @@ def run_web():
 API_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(API_TOKEN)
 
-# ការកំណត់សំឡេងសម្រាប់ភាសានីមួយៗ
+# បញ្ជីភាសា និងសំឡេងសម្រាប់បកប្រែទៅមក
 LANG_MAP = {
     "🇺🇸 English": {"code": "en", "voice": "en-US-AvaNeural"},
     "🇫🇷 French": {"code": "fr", "voice": "fr-FR-DeniseNeural"},
@@ -50,8 +50,8 @@ def get_kb():
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    user_settings[m.chat.id] = "🇰🇭 Khmer" # ភាសាគោលដៅដំបូង
-    bot.send_message(m.chat.id, "👋 សួស្តី! សូមជ្រើសរើសភាសាគោលដៅ រួចផ្ញើអត្ថបទមក ខ្ញុំនឹងបកប្រែ និងអានឱ្យស្តាប់។", reply_markup=get_kb())
+    user_settings[m.chat.id] = "🇰🇭 Khmer"
+    bot.send_message(m.chat.id, "👋 សូមជ្រើសរើសភាសាគោលដៅ រួចផ្ញើអត្ថបទមក ខ្ញុំនឹងបកប្រែ និងអានឱ្យស្តាប់។", reply_markup=get_kb())
 
 @bot.message_handler(func=lambda m: m.text in LANG_MAP.keys())
 def set_language(m):
@@ -67,7 +67,7 @@ def handle_message(m):
 
     bot.send_chat_action(cid, 'record_audio')
     try:
-        # បកប្រែស្វ័យប្រវត្តិទៅកាន់ភាសាដែលបានជ្រើសរើស
+        # បកប្រែពីគ្រប់ភាសាមកកាន់ភាសាគោលដៅ
         translated_text = GoogleTranslator(source='auto', target=target_info['code']).translate(text)
         
         fname = f"v_{cid}.mp3"
@@ -75,17 +75,17 @@ def handle_message(m):
         
         # ប៊ូតុង Inline ក្រោមសំឡេង
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 Join Channel", url="https://t.me/YourChannel"),
-                   types.InlineKeyboardButton("👤 Contact Admin", url="https://t.me/Wei_Sony"))
+        markup.add(types.InlineKeyboardButton("📢 Channel", url="https://t.me/YourChannel"),
+                   types.InlineKeyboardButton("👤 Admin", url="https://t.me/YourAdminID"))
         
         caption = f"🌐 បកប្រែជា៖ {target_lang_name}\n✨ @Ny_voice_bot"
         with open(fname, 'rb') as v:
             bot.send_voice(cid, v, caption=caption, reply_markup=markup)
         os.remove(fname)
-    except Exception as e:
-        bot.send_message(cid, "❌ មិនអាចបកប្រែ ឬបង្កើតសំឡេងបានទេ។")
+    except:
+        bot.send_message(cid, "❌ មិនអាចបកប្រែបានទេ។ សូមព្យាយាមម្តងទៀត។")
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
-    # សំខាន់៖ skip_pending=True ដើម្បីកាត់បន្ថយការគាំង Conflict
+    # សំខាន់៖ skip_pending=True ជួយទប់ស្កាត់ការគាំង Conflict
     bot.infinity_polling(skip_pending=True)
